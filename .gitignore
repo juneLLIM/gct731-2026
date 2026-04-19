@@ -1,0 +1,21 @@
+# tex/: track sources and compiled PDFs, ignore build artifacts
+tex/*
+!tex/*.pdf
+!tex/*.tex
+!tex/*.bib
+!tex/*.sty
+
+# macOS / editor cruft
+.DS_Store
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Claude Code local state
+.claude/
+
+# Research PDFs and personal notes
+reference/
