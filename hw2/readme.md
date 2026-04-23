@@ -38,7 +38,7 @@ You may observe "octave errors," where the estimated tempo is exactly double or 
 Write a detailed report answering the following:
 * Did HPSS improve results? Which parameters were most effective? Visualize the spectrograms and describe the auditory characteristics of the separated components.
 * Did the tempo prior solve octave errors? What was your optimal parameter setting?
-* Why do we need tempo-specific metrics like CMLc or AMLt in addition to the standard F-measure?
+* Why do we need tempo-specific metrics like CMLc or AMLt in addition to the standard F-measure? Write your understanding about tempo-specific metrics by refering to the [MIREX beat tracking task description](https://music-ir.org/mirex/wiki/2025:Audio_Beat_Tracking).
 * Improve the beat tracking accuracy further with your own ideas. 
 
 ---
@@ -53,13 +53,13 @@ You will notice that the template-based approach yields **highly jittery** predi
 
 
 * **Study:** Read Section 5.3 of the FMP book, ["Chapter 5: Chord Recognition"](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C5/C5S3_ChordRec_HMM.html).
-* **Evaluation:** Review the [MIREX Audio Chord Estimation task](https://music-ir.org/mirex/wiki/2025:Audio_Chord_Estimation) to understand the difference between CSR and chord segmentation accuracy.
+* **Implementation:** Refer to the python code examples in the [HMM-based Chord Recognition Section](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C5/C5S3_ChordRec_HMM.html)
 
 **Submission Requirements for Q2:**
 Write a detailed report answering the following:
-* How much did the HMM improve the CSR and the **Over-segmentation** (temporal continuity) score?
+* How much did the HMM improve the CSR and the chord segmentation score?
 * Compare three types of transition probability matrices: **uniform**, **estimated** (data-driven), and **transpose-invariant**. Use the pre-computed Beatles matrices provided in the [HMM-based Chord Recognition Section](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C5/C5S3_ChordRec_HMM.html). Note the the data-driven transition probability matrix is not necessarily working best for this song. 
-* Summarize your understanding of CSR versus segmentation accuracy. How does the HMM trade off between the two?
+* Summarize your understanding of CSR and chord segmentation score by refering to the [MIREX audio chord estimation task description](https://music-ir.org/mirex/wiki/2025:Audio_Chord_Estimation)
 * **Integration (Bonus):** Explore how using the **beat-aligned chroma** (syncing chroma to the beats found in Q1 by averaging chroma vectors within one beat) affects the chord recognition results. This does not necessariliy improve the performance but it is worth trying. 
 
 ---
