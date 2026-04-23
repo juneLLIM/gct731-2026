@@ -14,7 +14,7 @@ We provide a Python notebook, [GCT731-HW2.ipynb](https://colab.research.google.c
 
 ---
 
-## Question 1: Beat Tracking via Dynamic Programming (15 pts)
+## Question 1: Beat Tracking by Dynamic Programming (15 pts)
 
 Run the beat tracking method using dynamic programming on the **intro section** of the song (0–11 seconds). The code will return a tempo value, a visualization comparing ground truth vs. predicted beat times, and evaluation scores (F-measure, CMLc, CMLt, AMLc, AMLt). You should observe near 100% accuracy.
 
@@ -43,7 +43,7 @@ Write a detailed report answering the following:
 
 ---
 
-## Question 2: Chord Recognition via HMM (15 pts)
+## Question 2: Chord Recognition by Hidden Markov Models (15 pts)
 
 Run the **template-based** chord recognition on the verse section (15–26 seconds). It will return evaluation scores and a visualized comparison of the ground truth vs. predicted chords.
 
