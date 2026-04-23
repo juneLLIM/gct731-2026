@@ -34,7 +34,6 @@ You may observe "octave errors," where the estimated tempo is exactly double or 
 
 
 
-**Submission Requirements for Q1:**
 Write a detailed report answering the following:
 * Did HPSS improve results? Which parameters were most effective? Visualize the spectrograms and describe the auditory characteristics of the separated components.
 * Did the tempo prior solve octave errors? What was your optimal parameter setting?
@@ -55,7 +54,7 @@ You will notice that the template-based approach yields **highly jittery** predi
 * **Study:** Read Section 5.3 of the FMP book, ["Chapter 5: Chord Recognition"](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C5/C5S3_ChordRec_HMM.html).
 * **Implementation:** Refer to the python code examples in the [HMM-based Chord Recognition Section](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C5/C5S3_ChordRec_HMM.html)
 
-**Submission Requirements for Q2:**
+
 Write a detailed report answering the following:
 * How much did the HMM improve the CSR and the chord segmentation score?
 * Compare three types of transition probability matrices: **uniform**, **estimated** (data-driven), and **transpose-invariant**. Use the pre-computed Beatles matrices provided in the [HMM-based Chord Recognition Section](https://www.audiolabs-erlangen.de/resources/MIR/FMP/C5/C5S3_ChordRec_HMM.html). Note the the data-driven transition probability matrix is not necessarily working best for this song. 
