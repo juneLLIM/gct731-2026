@@ -1,0 +1,313 @@
+\documentclass{article}
+\PassOptionsToPackage{numbers}{natbib}
+\usepackage[main,final]{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{graphicx}
+
+\setcounter{secnumdepth}{3}
+\renewcommand{\thesection}{Question \arabic{section}:}
+\renewcommand{\thesubsection}{\arabic{section}.\arabic{subsection}}
+\renewcommand{\thesubsubsection}{\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}
+
+\title{GCT731 Homework \#2\\Beat Tracking and Chord Recognition}
+
+\author{%
+  Joo Eun Lim (20244418) \\
+  Graduate School of Culture Technology, KAIST
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    Beat tracking and chord recognition expose the central role of structural priors in low-level music information retrieval. This work studies dynamic-programming beat tracking and hidden Markov model chord recognition on the verse of \textit{Let It Be}, with a controlled sweep over priors and a stream-fusion extension to the full 243~s song. Harmonic-percussive source separation \cite{fitzgerald2010hpss} sharpens the percussive onset envelope but does not eliminate the 2$\times$ octave error of the autocorrelation tempo estimator, and a tempo prior centered below the ambiguity band is required to restore F = 0.933 on the verse. Extending the pipeline to a two-stream onset fusion of an HPSS-percussive mel-band spectral-flux envelope and a constant-Q spectral-flux envelope \cite{bello2005onset,schorkhuber2010cqt} reaches F = 0.974 and CMLc = 1.000 on the full song, strictly dominating richer 3-stream and 4-stream fusions, because a chroma novelty stream injects phase noise on chord-change frames and breaks continuous-correct tempo lock. For chord recognition, a 24-state HMM with a uniform self-loop raises chord symbol recall from 0.711 (template) to 0.871 and segmentation score from 0.481 to 0.871, while a corpus-estimated transition matrix \cite{mueller2015fmp} underperforms its transpose-invariant variant because of key bias. Across both tasks, the appropriate structural prior, applied at the appropriate time scale, contributes more to pipeline performance than the strength of the underlying classifier.
+\end{abstract}
+
+\section{Beat Tracking by Dynamic Programming}
+
+\subsection{Harmonic-Percussive Source Separation (HPSS)}
+
+\subsubsection{Architecture}
+HPSS \cite{fitzgerald2010hpss} separates a magnitude spectrogram into a harmonic plane (smooth along time) and a percussive plane (smooth along frequency) via complementary 1-D median filters, isolating sustained partials from transient attacks. Two interfaces are evaluated: \texttt{librosa.effects.hpss(y, margin)} with margin in $\{1, 2, 4, 8\}$, and \texttt{librosa.decompose.hpss} on the STFT directly with kernel size in $\{17, 31, 63\}$ at margin 2. The percussive component is then passed to the default DP beat tracker (broadband onset envelope, tempo autocorrelation, dynamic programming), with the harmonic plane discarded.
+
+\subsubsection{Experiment}
+Each HPSS configuration enumerated in 1.1.1 is evaluated on the verse excerpt (15--26~s), where the default DP pipeline collapses to the 2$\times$ octave at 143.55~BPM. For every configuration, the percussive component is passed to \texttt{librosa.beat.beat\_track} with default arguments, and the predicted beats are scored against the provided ground-truth annotations using F-measure, CMLt, and AMLt from the MIREX Audio Beat Tracking task \cite{mirex2025beat} (full metric definitions are deferred to 1.2.2). The intent of the sweep is to isolate the contribution of harmonic suppression alone: F and AMLt capture phase alignment under any metric level, while CMLt requires the prediction to be at the correct tempo octave. A non-zero AMLt with CMLt = 0 therefore indicates that HPSS has restored phase but not the metric level.
+
+\subsubsection{Results and Discussion}
+Table~\ref{tab:hpss} reports the sweep. Phase recovery and metric-level recovery split apart in the data. F rises from 0.286 to 0.609 ($+0.32$ absolute) and AMLt from 0.357 to 0.812 at margin = 2, indicating that the beats decoded from the percussive envelope agree with the ground truth at a metric multiple of the true period. At the same time, CMLt remains 0 in every configuration, and the autocorrelation peak that \texttt{beat\_track} decodes stays at 143.55~BPM. HPSS reshapes the local onset envelope but does not alter its global periodicity. The autocorrelation peak at lag = period\,/\,2 reflects sub-beat rhythmic structure (off-beat piano accents in the verse), and its amplitude is independent of how cleanly the attacks are isolated. Phase recovery and metric-level recovery are therefore decoupled failure modes, and a separator that only sharpens onsets cannot disambiguate the AC peak by itself. The margin sweep saturates at 2, beyond which further separation does not alter the percussive content seen by the tracker. STFT kernel size has a smaller effect. Kernel = 17 is too short to span typical harmonic ridges and degrades performance, while kernel = 31 and 63 both reach the optimum. Resolving the surviving octave error therefore requires an explicit tempo prior, which is the focus of Section~1.2.
+
+\begin{table}[ht]
+    \centering
+    \caption{HPSS parameter sweep on the verse. F and AMLt jump at margin = 2 and saturate, while CMLt stays at zero across every configuration, indicating that harmonic suppression fixes phase but not the metric level.}
+    \label{tab:hpss}
+    \begin{tabular}{lcccc}
+        \toprule
+        Configuration                  & Tempo (BPM) & F              & CMLt  & AMLt           \\
+        \midrule
+        no HPSS (baseline)             & 143.55      & 0.286          & 0.000 & 0.357          \\
+        percussive, margin = 1         & 143.55      & 0.364          & 0.000 & 0.400          \\
+        percussive, margin = 2         & 143.55      & \textbf{0.609} & 0.000 & \textbf{0.812} \\
+        percussive, margin = 4         & 143.55      & 0.609          & 0.000 & 0.812          \\
+        percussive, margin = 8         & 143.55      & 0.609          & 0.000 & 0.812          \\
+        percussive, kernel = 17, m = 2 & 143.55      & 0.273          & 0.000 & 0.400          \\
+        percussive, kernel = 31, m = 2 & 143.55      & 0.609          & 0.000 & 0.812          \\
+        percussive, kernel = 63, m = 2 & 143.55      & 0.609          & 0.000 & 0.812          \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Figure~\ref{fig:hpss-spec} contrasts log-magnitude spectrograms of the original mix, the harmonic component, and the percussive component at margin = 1.0. Horizontal striations dominate the harmonic plane (sustained piano partials, vocal vibrato), and vertical striations dominate the percussive plane (broadband attack transients). The two planes occupy near-disjoint regions of the time-frequency support, which is the structural condition that licenses HPSS to operate by median filtering along orthogonal axes. Auditory inspection agrees with the visual reading. The harmonic component is heard as sustained piano and vocal melody with attenuated attacks, the percussive component as thin and attack-dominated. The percussive plane preserves the full set of broadband attacks in the verse, and this preservation is what makes the decoupling identified above unavoidable. Phase information survives because attack locations survive, but the rhythmic content responsible for the doubled-octave AC peak is preserved by the same operation, since it lives in the same broadband transients that HPSS is designed to retain.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.95\linewidth]{imgs/hw2_hpss_spectrograms.png}
+    \caption{Log-magnitude spectrograms of the verse: original (top), harmonic component (middle), percussive component (bottom) at HPSS \texttt{margin = 1.0}. Horizontal striations dominate the harmonic plane (sustained piano and vocal vibrato), and vertical striations dominate the percussive plane (attack transients). The two planes occupy near-disjoint regions of the time-frequency support, the structural condition that licenses median filtering as a separator.}
+    \label{fig:hpss-spec}
+\end{figure}
+
+\subsection{Tempo Prior}
+
+\subsubsection{Architecture}
+Two prior-aware decoders consume the same HPSS percussive onset envelope and differ only in how the global tempo is enforced. \texttt{librosa.beat.beat\_track(start\_bpm, tightness)} \cite{ellis2007beat} weights autocorrelation peaks by a Gaussian tempo prior centered at start\_bpm with sharpness controlled by tightness, then decodes beats via dynamic programming on a discrete grid of peaks. \texttt{librosa.beat.plp} integrates a continuous log-normal prior \texttt{scipy.stats.lognorm(loc=0, scale, s=1.0)} (median = scale BPM) through a comb-filter-like local-pulse computation, returning a continuous pulse-energy curve from which beats are recovered as local maxima.
+
+\subsubsection{Experiment}
+
+\paragraph{Setup.} \texttt{beat\_track} is swept exhaustively over the 16-cell grid start\_bpm $\in \{60, 80, 100, 120\}$ $\times$ tightness $\in \{50, 100, 200, 400\}$. PLP is swept over five prior centers $\{60, 70, 80, 100, 120\}$~BPM at fixed shape $s = 1.0$, with beats recovered by applying \texttt{librosa.util.localmax} to the returned pulse curve. All configurations are scored on the verse against the provided beat annotations using F-measure, CMLt, and AMLt from the MIREX Audio Beat Tracking task \cite{mirex2025beat}.
+
+\paragraph{Why three metrics.} F-measure, CMLt, and AMLt jointly diagnose the octave-related failure modes that motivate this section, and no one of them suffices alone. F counts beats inside a $\pm 70$~ms tolerance and ignores the metric level, so a tactus, double-, triple-, or half-tempo prediction can produce the same F whenever its phase aligns with subsets of the reference. CMLt requires the prediction to be at the exact metric level (correct tempo \emph{and} correct phase) and isolates tempo correctness. AMLt relaxes to any metrical multiple and isolates phase. The gap AMLt$-$CMLt therefore quantifies the contribution of off-octave decoding. The continuous variants CMLc and AMLc are separate from this metric-level question and instead require that correctness be sustained over the longest contiguous run, fragmenting whenever the prediction drops a single beat. The 1.1 baseline (F = 0.286, CMLt = 0, AMLt = 0.357) is the canonical signature that F alone would obscure, and the 1.2 sweep is designed to test whether a tempo prior alone closes that gap.
+
+\subsubsection{Results and Discussion}
+
+\paragraph{\texttt{beat\_track} sweep.} Table~\ref{tab:prior} reports the full sweep. The prior closes the gap whenever its center lies well below the 2$\times$ ambiguity band. All eight configurations with start\_bpm $\in \{60, 80\}$ converge on the correct 73.83~BPM and saturate the metric-level scores at CMLt = AMLt = 0.875. F is constant at 0.933 for tightness $\le 200$ and drops to 0.800 at tightness = 400, where the prior over-weights the autocorrelation peak relative to the envelope evidence and the decoded beat times shift slightly off the local maxima even though the tempo is correct. The two failing prior centers fail in different ways. start\_bpm = 120 locks onto the doubled octave at 143.55~BPM (F = 0.609, CMLt = 0, AMLt = 0.812), since the prior center sits on top of the dominant autocorrelation peak and a Gaussian centered there reinforces the wrong peak rather than overruling it. start\_bpm = 100 instead collapses onto a different wrong peak at 92.29~BPM (F = 0.375, CMLt = 0.222, AMLt = 0.333), an intermediate failure mode in which the prior is far enough from 143.55 to overrule the doubled peak but too far from 73.83 to lock the correct period. At both failing centers, large tightness collapses the result further (F = 0.182--0.273), confirming that a sharp prior on the wrong center is worse than a diffuse one. Six configurations are tied at the optimum (start\_bpm $\in \{60, 80\}$, tightness $\in \{50, 100, 200\}$). (60, 50) is taken as the canonical operating point because it minimises the prior weight in the saturated set, which most cleanly attributes the result to the onset envelope rather than to the prior strength.
+
+\begin{table}[ht]
+    \centering
+    \caption{\texttt{beat\_track} sweep on the HPSS percussive verse. The decoder converges to the correct 73.83~BPM whenever start\_bpm sits below the 2$\times$ ambiguity band, demonstrating that the prior, not the onset envelope, resolves the octave.}
+    \label{tab:prior}
+    \begin{tabular}{cccccc}
+        \toprule
+        start\_bpm & tightness & Tempo  & F              & CMLt           & AMLt  \\
+        \midrule
+        60         & 50        & 73.83  & \textbf{0.933} & \textbf{0.875} & 0.875 \\
+        60         & 100       & 73.83  & 0.933          & 0.875          & 0.875 \\
+        60         & 200       & 73.83  & 0.933          & 0.875          & 0.875 \\
+        60         & 400       & 73.83  & 0.800          & 0.875          & 0.875 \\
+        80         & 50        & 73.83  & 0.933          & 0.875          & 0.875 \\
+        80         & 100       & 73.83  & 0.933          & 0.875          & 0.875 \\
+        80         & 200       & 73.83  & 0.933          & 0.875          & 0.875 \\
+        80         & 400       & 73.83  & 0.800          & 0.875          & 0.875 \\
+        100        & 50        & 92.29  & 0.375          & 0.222          & 0.333 \\
+        100        & 100       & 92.29  & 0.375          & 0.222          & 0.333 \\
+        100        & 200       & 92.29  & 0.235          & 0.100          & 0.100 \\
+        100        & 400       & 92.29  & 0.235          & 0.100          & 0.100 \\
+        120        & 50        & 143.55 & 0.609          & 0.000          & 0.812 \\
+        120        & 100       & 143.55 & 0.609          & 0.000          & 0.812 \\
+        120        & 200       & 143.55 & 0.273          & 0.000          & 0.333 \\
+        120        & 400       & 143.55 & 0.182          & 0.000          & 0.267 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\paragraph{PLP sweep.} Table~\ref{tab:plp} reports PLP across the five prior centers. PLP underperforms substantially regardless of where the prior is centered. At scale = 70~BPM, closest to the true 73.83~BPM, F peaks at 0.429 but only 11 beats are decoded against 14 in the reference, and CMLt is just 0.143. At scale $\in \{100, 120\}$~BPM the decoded count matches the reference at 14 and CMLt rises to 0.429, but F drops to 0.286 because the predicted phase no longer aligns with the reference. No PLP configuration approaches \texttt{beat\_track}'s saturated F = 0.933, CMLt = 0.875. The mechanism is that PLP returns a continuous pulse-energy curve, and peak-picking via \texttt{librosa.util.localmax} produces a dense set of spurious beats on an 11~s segment whenever the comb response has secondary lobes. Grid decoding on a discrete autocorrelation peak is therefore more robust on short clips than continuous-prior pulse decoding regardless of prior center, and the prior-center sweep rules out an unfair-prior interpretation of the gap. The chief limitation of 1.2 is therefore not that the prior is too weak but that its center must be supplied externally, an assumption that the proposed pipeline of Section~1.3 removes.
+
+\begin{table}[ht]
+    \centering
+    \caption{PLP with log-normal prior ($s = 1.0$) at five prior centers on the same HPSS percussive verse envelope (14 reference beats). Even at scale = 70~BPM, the prior most aligned with the true tempo, PLP's F = 0.429 is well below \texttt{beat\_track} at any saturated configuration, and the failure mechanism (spurious local-maximum beats from secondary comb lobes) does not depend on prior center.}
+    \label{tab:plp}
+    \begin{tabular}{ccccc}
+        \toprule
+        prior center (BPM) & F     & CMLt  & AMLt  & n\_pred \\
+        \midrule
+        60                 & 0.154 & 0.000 & 0.167 & 10      \\
+        70                 & \textbf{0.429} & 0.143 & 0.143 & 11      \\
+        80                 & 0.286 & 0.286 & 0.286 & 12      \\
+        100                & 0.286 & \textbf{0.429} & 0.429 & 14      \\
+        120                & 0.286 & 0.429 & 0.429 & 14      \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Proposed Improvement Pipeline}
+
+\subsubsection{Architecture}
+The pipeline composes existing building blocks rather than introducing a new beat-tracking algorithm. The base configuration takes the HPSS \cite{fitzgerald2010hpss} percussive component, computes a median-aggregated mel-band spectral-flux onset envelope \cite{bello2005onset} via \texttt{librosa.onset.onset\_strength} (\texttt{aggregate=np.median}, \texttt{n\_mels=128}, \texttt{fmax=8000}), and feeds it to \texttt{librosa.beat.beat\_track} \cite{ellis2007beat}. The manual start\_bpm is replaced by deterministic band-halving (any tempo estimate inside 100--180~BPM is halved before being passed as start\_bpm), so the prior center is derived from the audio rather than supplied externally. After DP decoding, each predicted beat is snapped to the nearest local onset maximum within $\pm 50$~ms.
+
+The proposed extension replaces the single envelope with a two-stream onset fusion, in the multi-feature accent-function tradition of \cite{goto2001beat,klapuri2006meter}. The first stream is the spectral-flux ODF \cite{bello2005onset} on the HPSS percussive component (weight 1.0). The second stream applies the same ODF to the constant-Q transform spectrogram \cite{schorkhuber2010cqt} of the original audio without HPSS preprocessing (weight 0.5), preserving harmonic-onset cues at log-frequency resolution rather than discarding them with the harmonic plane. The two streams are z-scored, summed, and half-wave rectified, then passed through the same band-halving plus DP plus snap chain. Two further candidate streams are introduced for ablation only, to verify that the two-stream design is not arbitrary: a chroma novelty function (weight 0.5) and an onset envelope on the HPSS harmonic component (weight 0.5).
+
+\subsubsection{Experiment}
+Evaluation in 1.3 is moved from the 11~s verse slice of 1.1 and 1.2 to the full 243~s, 279-beat Isophonics annotation of \textit{Let It Be}. Three considerations motivate the scope change. First, with 14 ground-truth beats the verse slice gives F a resolution of 0.067 per beat, so any architectural claim about a multi-stream design sits within the noise of a single beat. Second, the continuous correctness metric CMLc is meaningful only over a long contiguous run, and an 11~s window is too short to distinguish a tracker that locks for 4 minutes from one that locks for 11 seconds. Third, a stream-fusion design is intended to absorb cross-section variability (verse, chorus, bridge), which the verse-only slice cannot expose. A 15-subset lattice over every non-empty subset of \{perc, chroma, cqt, harm\} streams is evaluated under the same downstream chain. Predictions are scored against the Isophonics annotation using F-measure, CMLc, CMLt, and AMLt from the MIREX Audio Beat Tracking task \cite{mirex2025beat}. The published HW2 baseline (HPSS percussive only, no z-score) is included as the reference. Two secondary ablations on the 4-stream base test per-stream local-RMS normalization and a post-DP downbeat-anchoring step.
+
+\subsubsection{Results and Discussion}
+Table~\ref{tab:streams} reports the lattice. The proposed perc + cqt fusion reaches F = 0.9744, CMLc = 1.0000, CMLt = 1.0000 and strictly dominates the 3-stream perc + chroma + cqt (F = 0.9670, CMLc = 0.8938) and the 4-stream perc + chroma + cqt + harm (F = 0.9707, CMLc = 0.8974) on every metric, an outcome that runs against the intuition that more orthogonal streams should keep helping. Relative to the published baseline, perc + cqt adds $+0.039$ F and $+0.110$ CMLc, with continuous correctness of tempo and phase across the entire 4-minute song.
+
+\begin{table}[ht]
+    \centering
+    \caption{Full-song stream-fusion lattice on \textit{Let It Be} (243~s, 279 ground-truth beats). The 2-stream perc + cqt subset is the winner and strictly dominates every richer fusion that includes chroma.}
+    \label{tab:streams}
+    \begin{tabular}{lcccc}
+        \toprule
+        Streams                          & F               & CMLc            & CMLt            & n\_pred \\
+        \midrule
+        Baseline (perc only, no z-score) & 0.9358          & 0.8901          & 0.9670          & 278     \\
+        \midrule
+        perc                             & 0.9431          & 0.8901          & 0.9634          & 278     \\
+        chroma                           & 0.6447          & 0.2015          & 0.7582          & 279     \\
+        cqt                              & 0.9597          & 0.8535          & 0.9927          & 279     \\
+        harm                             & 0.1356          & 0.3150          & 0.8132          & 258     \\
+        \midrule
+        perc + chroma                    & 0.9449          & 0.8938          & 0.9670          & 276     \\
+        perc + cqt                       & \textbf{0.9744} & \textbf{1.0000} & \textbf{1.0000} & 279     \\
+        perc + harm                      & 0.9394          & 0.8901          & 0.9634          & 278     \\
+        chroma + cqt                     & 0.9651          & 0.8535          & 0.9890          & 278     \\
+        chroma + harm                    & 0.2560          & 0.1685          & 0.8462          & 270     \\
+        cqt + harm                       & 0.5945          & 0.8535          & 0.9927          & 278     \\
+        \midrule
+        perc + chroma + cqt              & 0.9670          & 0.8938          & 0.9890          & 279     \\
+        perc + chroma + harm             & 0.9412          & 0.8938          & 0.9670          & 276     \\
+        perc + cqt + harm                & 0.9744          & 1.0000          & 1.0000          & 279     \\
+        chroma + cqt + harm              & 0.7963          & 0.5385          & 0.9853          & 278     \\
+        \midrule
+        perc + chroma + cqt + harm       & 0.9707          & 0.8974          & 0.9927          & 279     \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Three findings stand out. First, the chroma novelty stream is the load-bearing wrong move. Adding chroma to perc + cqt drops CMLc from 1.0000 to 0.8938 at a 0.007 F cost, the signature of phase noise on chord-change frames that breaks the continuous-correct run. The chroma novelty function peaks at chord boundaries rather than at beat boundaries, and the tempogram conflates the two when both kinds of evidence are present. Second, the CQT-onset stream alone (F = 0.9597, CMLc = 0.8535) is already strong, indicating that a log-frequency representation preserves harmonic-onset cues that a percussive-only mel envelope underweights. Adding perc supplies the F = 0.0147 needed to lock CMLc to 1.0000 by reinforcing the percussive transients that CQT smooths. Third, the harmonic-onset stream is useless alone (F = 0.1356) and actively harmful when paired with cqt only (cqt + harm at F = 0.5945 vs cqt alone at 0.9597). It is rendered harmless once perc is in the mix (perc + cqt + harm = perc + cqt at F = 0.9744, CMLc = 1.0000), so z-score fusion absorbs weak streams only when a dominant percussive stream is present to anchor the tempogram.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.95\linewidth]{imgs/hw2_q13_beats.png}
+    \caption{Predicted beats (red dashed) versus ground truth (green) under the perc + cqt fusion on a 30~s zoom (60--90~s) of \textit{Let It Be}. Full-song scores are F = 0.9744 and CMLc = 1.0000, with tempo and phase tracked continuously across the entire 243~s song.}
+    \label{fig:q13-beats}
+\end{figure}
+
+The two secondary ablations on the 4-stream base reinforce the same lesson. Per-stream local-RMS normalization drops F by 0.011 (0.9707 to 0.9597) and shifts the tempo estimate to 69.84~BPM (the cqt single-stream tempo) instead of 71.78~BPM. Over-flattening the percussive prominence lets the cqt stream win the tempo vote, since cqt is the only single-stream input whose autocorrelation peak sits at 69.84~BPM rather than at 71.78~BPM (the other three streams all return 71.78~BPM in isolation). Post-DP downbeat anchoring trades F for CMLc on the 4-stream base (F 0.9707 to 0.9670, CMLc 0.8974 to 1.0000) and is the only post-DP refinement that locks CMLc to 1.0000 on the 4-stream input. But the proposed 2-stream perc + cqt already reaches CMLc = 1.0000 \emph{and} higher F = 0.9744 without downbeat anchoring, so the added complexity is dominated by the simpler method. The lattice and the secondary ablations therefore both confirm the two-stream perc + cqt design: chroma, harm, per-stream RMS normalization, and downbeat anchoring all fail to improve on it.
+
+\section{Chord Recognition by Hidden Markov Models}
+
+\subsection{HMM-based Chord Recognition}
+
+\subsubsection{Architecture}
+The chord recogniser is a 24-state HMM over the major and minor triads. Frame-level emissions come from the cosine similarity between the CQT chromagram and the 24 binary major/minor templates. Decoding is performed by Viterbi log-likelihood through \texttt{libfmp.c5.viterbi\_log\_likelihood} \cite{mueller2015fmp}. The baseline template predictor is the argmax of the same emission without an HMM and serves as the no-prior reference. Three transition matrices are considered, ordered by the strength and structure of the prior they encode.
+\begin{itemize}
+    \item \textbf{Uniform.} \texttt{libfmp.c5.uniform\_transition\_matrix(p, N=24)}, with self-transition probability $p$ on the diagonal and the remaining mass spread evenly over the 23 off-diagonal entries. Larger $p$ corresponds to stronger temporal smoothing, with the no-smoothing limit at $p = 1/N \approx 0.042$.
+    \item \textbf{Estimated (data-driven).} The Beatles-180 transition matrix \texttt{FMP\_C5\_transitionMatrix\_Beatles.csv} from the FMP data server \cite{mueller2015fmp}, which encodes empirical cadence statistics (I$\to$V$\to$I, vi$\to$IV$\to$V) measured across 180 Beatles songs.
+    \item \textbf{Transpose-invariant.} The estimated matrix passed through \texttt{libfmp.c5.matrix\_chord24\_trans\_inv}, which averages each major/minor block over its 12 cyclic root shifts so that the transition cost depends only on the interval between roots.
+\end{itemize}
+
+The three matrices form a trajectory from minimal prior, through corpus-derived prior, to a key-agnostic version of the same prior. This trajectory isolates the contribution of structured transitions and of key bias as separate factors.
+
+\subsubsection{Experiment}
+The verse excerpt is processed in two stages on the same chromagram. First, the uniform HMM is swept over self-loop probability $p \in \{0.05, 0.20, 0.50, 0.80, 0.90, 0.95, 0.99\}$ to identify the smoothing strength at which CSR and Seg saturate. Second, with $p$ fixed at the optimum from the sweep, the three transition matrices are evaluated on the same emissions. Predictions are scored against the provided ground-truth annotations using two metrics from the MIREX Audio Chord Estimation task \cite{mirex2025chord}.
+
+\textbf{CSR (Chord Symbol Recall).} For each annotated segment, CSR is the fraction of its duration during which the predicted chord matches the reference under the \texttt{majmin} chord-mapping convention. CSR is a frame-time-weighted accuracy and a long correctly-labeled segment contributes more than a short one. \textbf{Seg (segmentation score).} The directional Hamming distance between the predicted segmentation and the reference, ignoring chord identities. Seg captures whether boundaries occur at the correct times, so a jittery predictor with the correct chords still scores low. CSR and Seg are complementary: CSR measures \emph{what}, Seg measures \emph{when}. The two together expose the canonical failure mode in which a predictor identifies the chord but lacks temporal smoothness, the very mode that motivates the HMM smoother.
+
+\subsubsection{Results and Discussion}
+The template baseline yields CSR = 0.711, Seg = 0.481 with 53 segments produced by argmax against 8 ground-truth segments (Figure~\ref{fig:template-panel}). The CSR is reasonable but the Seg of 0.481 across an order of magnitude too many segments is the canonical high-CSR low-Seg failure mode that defines the HMM's job.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.95\linewidth]{imgs/hw2_template_panel.png}
+    \caption{Template chord recognition pipeline on the verse. From top to bottom: chromagram, chord-template similarity matrix, ground-truth chord segmentation, template-based prediction. The fragmented bottom row exhibits the canonical high-CSR low-Seg failure mode that the HMM smoother is designed to remedy.}
+    \label{fig:template-panel}
+\end{figure}
+
+The uniform sweep (Table~\ref{tab:hmm-uniform}) shows a wide CSR-Seg plateau across $p \in [0.5, 0.95]$ at CSR = Seg = 0.871 with 7 segments, close to the 8 ground-truth segments. Below $p = 0.5$ smoothing is insufficient and segments multiply. At $p = 0.99$ the chain becomes nearly deterministic and locks onto a single chord, dropping both metrics to 0.765. Relative to the template baseline, the best uniform HMM raises CSR by $+0.16$ and Seg by $+0.39$. The Seg gain substantially exceeds the CSR gain, which is the expected effect of a temporal prior. The smoother suppresses spurious transitions without altering the dominant chord identity. The wide plateau also indicates that smoothing strength is robust above a threshold rather than requiring fine tuning.
+
+\begin{table}[ht]
+    \centering
+    \caption{HMM with uniform transitions on the verse. CSR and Seg co-saturate over a wide plateau ($p \in [0.5, 0.95]$) and drop only at $p = 0.99$, indicating that smoothing strength is robust above a threshold but breaks down once the chain becomes nearly deterministic.}
+    \label{tab:hmm-uniform}
+    \begin{tabular}{cccc}
+        \toprule
+        $p$ self-loop & CSR            & Seg            & \# segments \\
+        \midrule
+        0.05          & 0.743          & 0.631          & 25          \\
+        0.20          & 0.833          & 0.834          & 10          \\
+        0.50          & \textbf{0.871} & \textbf{0.871} & 7           \\
+        0.80          & 0.871          & 0.871          & 7           \\
+        0.90          & 0.871          & 0.871          & 7           \\
+        0.95          & 0.871          & 0.871          & 7           \\
+        0.99          & 0.765          & 0.765          & 6           \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The transition-matrix comparison (Table~\ref{tab:trans3}) ranks the three priors uniform (0.871) $>$ transpose-invariant (0.835) $>$ estimated (0.765). The directly estimated Beatles-180 matrix performs worst despite encoding real Beatles harmonic statistics. The verse of \textit{Let It Be} sits in C major, while the corpus is dominated by other keys, so transitions such as C $\to$ G or C $\to$ F are under-weighted relative to cadences common in the typical Beatles song. This is the textbook key-bias failure mode of corpus-derived priors. The transpose-invariant variant removes this bias by averaging each major/minor block over its 12 cyclic shifts, recovering most of the harmonic-function structure while remaining key-agnostic. Its CSR (0.835) lies almost exactly midway between the estimated (0.765) and the uniform (0.871) on this clip. The uniform matrix outperforms the others on this verse because the chord sequence is short and self-similar, and a strong self-loop already captures the dominant prior of remaining on the current chord. With greater chord variety, the structured matrices would likely overtake the uniform variant.
+
+\begin{table}[ht]
+    \centering
+    \caption{Chord recognition with three transition matrices. The corpus-estimated matrix underperforms its key-agnostic transpose-invariant variant, which itself underperforms the uniform self-loop on this short, low-entropy verse, isolating key bias as the cost of using a directly estimated prior.}
+    \label{tab:trans3}
+    \begin{tabular}{lcc}
+        \toprule
+        Transition             & CSR            & Seg            \\
+        \midrule
+        Template (no HMM)      & 0.711          & 0.481          \\
+        Uniform ($p = 0.5$)    & 0.871          & 0.871          \\
+        Estimated (Beatles-180) & 0.765          & 0.803          \\
+        Transpose-invariant    & \textbf{0.835} & \textbf{0.843} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Figure~\ref{fig:trans-matrices} visualizes the log-probability of the three matrices. The estimated matrix shows key-specific concentration in the off-diagonal blocks, while the transpose-invariant version averages those into stripes that depend only on the interval between roots. The uniform matrix is featureless apart from the diagonal self-loop. Figure~\ref{fig:chord-seg} overlays the resulting segmentations against the ground truth. The uniform smoother produces the cleanest match, the transpose-invariant variant introduces a small number of key-agnostic substitutions, and the estimated matrix introduces visibly more chord substitutions where the corpus prior pulls the decoder toward foreign-key cadences. The visual gap mirrors the CSR-Seg gap in Table~\ref{tab:trans3} and confirms that the underperformance of the estimated matrix is concentrated at chord substitution rather than at boundary placement.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.95\linewidth]{imgs/hw2_transition_matrices.png}
+    \caption{Log-probability of the three transition matrices. Left: uniform with $p = 0.5$ self-loop. Middle: Beatles-180 estimated. Right: transpose-invariant version of the estimated matrix. The estimated matrix exhibits key-specific concentration that the transpose-invariant version averages out, leaving structure that depends only on the interval between roots.}
+    \label{fig:trans-matrices}
+\end{figure}
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.95\linewidth]{imgs/hw2_chord_segmentation.png}
+    \caption{Chord segmentation of the verse under the four configurations: ground truth, then HMM with the uniform, estimated, and transpose-invariant transition matrices. Visual differences mirror the CSR and Seg gap in Table~\ref{tab:trans3}, with the estimated matrix introducing chord substitutions that the transpose-invariant variant largely removes.}
+    \label{fig:chord-seg}
+\end{figure}
+
+\subsection{Beat-Aligned Chroma (Bonus)}
+
+\subsubsection{Architecture}
+The HMM emission, the three transition matrices, and the Viterbi decoder of 2.1 are reused unchanged. Only the chromagram differs. The frame-level chroma columns at the default librosa hop are replaced by beat-synchronous columns, each formed by averaging the chroma vectors that fall inside one inter-beat interval defined by the beats detected by the Section~1.3 perc + cqt pipeline applied to the verse, plus the segment endpoints. The 1.3 pipeline is used in place of the 1.2 operating point because it is the strongest beat estimator available in this work, so the bonus tests the upper bound of what beat-synchronous chroma can do on this excerpt. Each beat tick spans roughly 0.7~s rather than the 23~ms hop of 2.1, reducing temporal resolution by about 30$\times$ while aligning column boundaries to musically meaningful beat positions.
+
+\subsubsection{Experiment}
+On the resulting 15-column beat-synchronous chromagram (14 verse beats plus segment endpoints), the three transition matrices from 2.1 are re-evaluated with a fresh self-loop sweep, since the much longer effective time step changes the optimum. The uniform variant is relaxed to $p = 0.1$ to permit more transitions per column, while the estimated and transpose-invariant matrices are evaluated as in 2.1. Evaluation reuses the same CSR and Seg metrics defined in 2.1.2.
+
+\subsubsection{Results and Discussion}
+Table~\ref{tab:bonus} reports the result. Every configuration collapses to one or two segments at the modal chord. The structured matrices (estimated and transpose-invariant) remain on a single dominant chord without ever switching, yielding CSR $\approx 0.29$ and Seg = 0.146. Even the uniform matrix, relaxed from $p = 0.5$ above down to $p = 0.1$ here to permit more transitions, produces only 2 segments and CSR = 0.428. C major covers 67\% of the verse, and per-beat aggregation reinforces this asymmetry by making the modal-chord emission overwhelmingly dominant on most beats. The HMM saturates on this single chord and any prior contribution from the transition matrix is squashed by the dominant emission.
+
+\begin{table}[ht]
+    \centering
+    \caption{HMM on beat-aligned chroma over 15 beats. Beat aggregation collapses every configuration to one or two segments at the modal chord, confirming that the technique is unhelpful when the input span is short relative to the chord vocabulary in use.}
+    \label{tab:bonus}
+    \begin{tabular}{lccc}
+        \toprule
+        Transition             & CSR   & Seg   & \# segments \\
+        \midrule
+        Uniform ($p = 0.1$)    & 0.428 & 0.283 & 2           \\
+        Estimated (Beatles-180) & 0.293 & 0.146 & 1           \\
+        Transpose-invariant    & 0.293 & 0.146 & 1           \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The bonus is therefore a net loss on this 11-second slice, as anticipated in the assignment. The lesson is that beat-aligned chroma trades column count for boundary alignment, and the trade is favorable only when the input span contains enough beats for the chord vocabulary to remain expressive after aggregation. On a recording with many bars and varied chord changes, the alignment benefit dominates the column-count loss. On a short verse with one near-modal chord, aggregation flattens the emission below the threshold at which any HMM smoother can recover structure.
+
+\section*{Conclusion}
+The two studies converge on a single methodological point. HPSS \cite{fitzgerald2010hpss} acts as a phase-recovery operator that sharpens attack transients but leaves the metric-level error of the autocorrelation tempo estimator intact, and the missing component is a tempo prior. With \texttt{beat\_track(start\_bpm, tightness)} \cite{ellis2007beat} centered below the 2$\times$ ambiguity band, the verse score reaches F = 0.933, and grid decoding on a discrete autocorrelation peak proves more robust than continuous-prior pulse decoding on short segments regardless of the prior center. The proposed full-song extension fuses an HPSS-percussive mel-band spectral-flux envelope with a CQT spectral-flux envelope \cite{bello2005onset,schorkhuber2010cqt}, in the multi-feature accent-function tradition of \cite{goto2001beat,klapuri2006meter}, and reaches F = 0.974, CMLc = 1.000 on the full 243~s, 279-beat \textit{Let It Be}, strictly dominating every richer 3-stream and 4-stream fusion. The chroma novelty stream that intuition would suggest as additional evidence injects phase noise on chord-change frames and breaks continuous-correct tempo lock, an outcome that argues against fusing onset surrogates whose peaks are aligned with harmonic boundaries rather than with rhythmic accents.
+
+For chord recognition, a 24-state HMM with a uniform self-loop at $p = 0.5$ raises CSR from 0.711 (template) to 0.871 and Seg from 0.481 to 0.871, with a wide robustness plateau over $p \in [0.5, 0.95]$. The directly estimated Beatles-180 matrix \cite{mueller2015fmp} underperforms because the verse sits in C major while the corpus is dominated by other keys, and a transpose-invariant variant of the same matrix recovers most of the harmonic-function structure once that bias is removed by averaging over cyclic root shifts. Beat-aligned chroma is a net loss on this 11~s slice because over-aggregation flattens the emission below the threshold at which any HMM smoother can recover structure, and the technique should be expected to help only when the input span contains enough beats for the chord vocabulary to remain expressive after aggregation. Across both tasks, the appropriate structural prior, applied at the appropriate time scale, contributes more to performance than the strength of the underlying classifier, and diagnostic metrics that decouple tempo from phase (CMLt versus AMLt) and chord identity from boundary placement (CSR versus Seg) are essential for selecting that prior. The principal limitation is scope. Beat tracking is evaluated on the full 243~s of one song, while chord recognition is restricted to an 11~s verse, so a corpus-scale evaluation that would test whether the perc + cqt fusion and the transpose-invariant prior generalize beyond \textit{Let It Be} is left to future work.
+
+\bibliographystyle{ieeetr}
+\bibliography{bib}
+
+\end{document}
